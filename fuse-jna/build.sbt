@@ -6,6 +6,8 @@ version := "1.0.3"
 
 libraryDependencies += "net.java.dev.jna" % "jna" % "3.5.2"
 
+exportJars := true
+
 lazy val fuseJnaDirectory = settingKey[File]("fuse-jna source dir")
 
 fuseJnaDirectory <<= baseDirectory(_ / "downloaded-sources")

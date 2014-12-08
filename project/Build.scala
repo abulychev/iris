@@ -1,6 +1,5 @@
 import sbt._
 import Keys._
-import sbtassembly.AssemblyKeys._
 
 object BuildSettings {
   val buildOrganization = "com.github.abulychev"
@@ -29,6 +28,11 @@ object Dependencies {
   val sprayRouting = "io.spray" % "spray-routing" % "1.3.1"
 
   val scalaTest = "org.scalatest" %% "scalatest" % "2.2.2" % "test"
+
+  val logback = Seq (
+    "ch.qos.logback" % "logback-classic" % "1.1.2",
+    "ch.qos.logback" % "logback-core" % "1.1.2"
+  )
 }
 
 object IrisBuild extends Build {
@@ -40,7 +44,10 @@ object IrisBuild extends Build {
     base = file("model"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
-      Seq (libraryDependencies += apachecodec)
+      Seq (
+        exportJars := true,
+        libraryDependencies += apachecodec
+      )
   )
 
   lazy val common = Project (
@@ -48,9 +55,12 @@ object IrisBuild extends Build {
     base = file("common"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
-      Seq (libraryDependencies ++= Seq(
-        akkaActor, sprayCan, sprayRouting
-      ))
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          akkaActor, sprayCan, sprayRouting
+        )
+      )
   )
 
   lazy val localStorage = Project (
@@ -58,15 +68,14 @@ object IrisBuild extends Build {
     base = file("local-storage"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
-      Seq (libraryDependencies ++= Seq(
-        apacheio, guava, jsr305, akkaActor, akkaSlf4j,
-        scalaTest
-      ))
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          apacheio, guava, jsr305, akkaActor, akkaSlf4j,
+          scalaTest
+        )
+      )
   ) dependsOn(model, common)
-
-//  lazy val fuseJna = RootProject (
-//    build = uri("git://github.com/EtiennePerot/fuse-jna")
-//  )
 
   lazy val fuseJna = ProjectRef (
     id = "fuse-jna",
@@ -78,9 +87,12 @@ object IrisBuild extends Build {
     base = file("local-fs"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
-      Seq (libraryDependencies ++= Seq(
-        akkaActor, akkaSlf4j
-      ))
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          akkaActor, akkaSlf4j
+        )
+      )
   ) dependsOn(fuseJna, localStorage)
 
 //  lazy val singleNode = Project (
@@ -95,9 +107,12 @@ object IrisBuild extends Build {
     base = file("gossip"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
-      Seq (libraryDependencies ++= Seq(
-        akkaActor, akkaSlf4j
-      ))
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          akkaActor, akkaSlf4j
+        )
+      )
   ) dependsOn common
 
   lazy val dht = Project (
@@ -105,9 +120,12 @@ object IrisBuild extends Build {
     base = file("dht"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
-      Seq (libraryDependencies ++= Seq(
-        akkaActor, akkaSlf4j, sprayCan, sprayRouting
-      ))
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          akkaActor, akkaSlf4j, sprayCan, sprayRouting
+        )
+      )
   ) dependsOn common
 
   lazy val distributedStorage = Project (
@@ -115,9 +133,12 @@ object IrisBuild extends Build {
     base = file("distributed-storage"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
-      Seq (libraryDependencies ++= Seq(
-        akkaActor, akkaSlf4j, sprayCan, sprayRouting
-      ))
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          akkaActor, akkaSlf4j, sprayCan, sprayRouting
+        )
+      )
   ) dependsOn(common, localStorage, gossip, dht)
 
 //  lazy val multiNode = Project (
@@ -132,18 +153,22 @@ object IrisBuild extends Build {
     base = file("application"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
-      Seq (libraryDependencies ++= Seq(
-        akkaActor, akkaSlf4j, sprayCan, sprayRouting
-      ))
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          akkaActor, akkaSlf4j, sprayCan, sprayRouting
+        ),
+        libraryDependencies ++= logback
+      )
   ) dependsOn (model, common, localStorage, fuseJna, fs, gossip, dht, distributedStorage)
 
-  lazy val root = Project (
-    id = "iris",
-    base = file("."),
+  /* Assembly section */
+
+  lazy val assembly = Project (
+    id = "assembly",
+    base = file("assembly"),
     settings = Defaults.defaultSettings ++
-      sharedSettings ++ Seq(
-        assemblyJarName in assembly := s"iris-$buildVersion.jar"
-      )
-  ) aggregate (model, common, localStorage, fuseJna, fs, gossip, dht, distributedStorage)
+      sharedSettings
+  ) dependsOn application
 }
 
