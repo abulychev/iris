@@ -4,7 +4,7 @@ import java.io.File
 import akka.actor._
 import com.github.abulychev.iris.localfs.actor.FSActor
 import com.github.abulychev.iris.storage.local.names.actor.NameNode
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.{URI, InetAddress, InetSocketAddress}
 import com.github.abulychev.iris.dht.actor.DistributedHashTable
 import scala.collection.mutable
 import com.github.abulychev.iris.storage.local.info.actor.FileInfoStorage
@@ -17,19 +17,62 @@ import com.github.abulychev.iris.distributed.common.actor.DistributedStorage.Reg
 import com.github.abulychev.iris.distributed.routing.RoutingService
 import com.github.abulychev.iris.localfs.{LocalFS, FSLogging}
 import com.github.abulychev.iris.distributed.chunk.actor.{DistributedChunkStorage, ChunkRoutingActor}
+import com.typesafe.config.{Config, ConfigFactory}
+import org.slf4j.LoggerFactory
+import collection.JavaConversions._
 
 /**
  * User: abulychev
  * Date: 3/12/14
  */
 object ApplicationBuilder {
+  val log = LoggerFactory.getLogger(ApplicationBuilder.getClass)
+
+  def build(mountPoint: File, home: File): ActorSystem = {
+    log.info(s"Loading application with home: {${home.getAbsolutePath}} and mount point: {${mountPoint.getAbsolutePath}}")
+
+    val file = new File(home, "application.conf")
+    if (!file.exists() || !file.isFile) {
+      log.error(s"Could not find configuration file: {${file.getAbsolutePath}}")
+      System.exit(1)
+    }
+
+    log.info("Loading configuration ...")
+    val config = ConfigFactory.parseFile(file)
+
+    build(mountPoint, home, config)
+  }
+
+  def build(mountPoint: File, home: File, appConfig: Config): ActorSystem = {
+    val config = appConfig.withFallback(ConfigFactory.load()).getConfig("com.github.abulychev.iris")
+
+    val host = InetAddress.getByName(config.getString("host"))
+    val gossipPort = config.getInt("gossip.port")
+    val dhtPort=  config.getInt("dht.port")
+    val storagePort=  config.getInt("storage.port")
+
+    val seeds = config.getStringList("gossip.seeds")
+      .toList
+      .map { parse }
+
+    build(
+      mountPoint.getAbsolutePath,
+      home,
+      host,
+      gossipPort,
+      dhtPort,
+      storagePort,
+      seeds
+    )
+  }
+
   def build(mountPoint: String,
             home: File,
             host: InetAddress,
             gossipPort: Int,
             port: Int,
             dhtPort: Int,
-            seeds: List[InetSocketAddress]) {
+            seeds: List[InetSocketAddress]): ActorSystem = {
 
     val gossipAddress = new InetSocketAddress(host, gossipPort)
     val namesServiceAddress = new InetSocketAddress(host, port)
@@ -112,8 +155,17 @@ object ApplicationBuilder {
           services += prefix -> actor
           if (services.size == 3) context.actorOf(HttpServer.props(host, port, services.toMap))
       }
+
+      override def postStop() {
+        fs.unmount()
+      }
     }))
+
+    system
   }
 
-
+  private def parse(address: String): InetSocketAddress = {
+    val uri = new URI("http://" + address)
+    new InetSocketAddress(uri.getHost, uri.getPort)
+  }
 }

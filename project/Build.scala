@@ -27,7 +27,7 @@ object Dependencies {
   val sprayCan = "io.spray" % "spray-can" % "1.3.1"
   val sprayRouting = "io.spray" % "spray-routing" % "1.3.1"
 
-  val scalaTest = "org.scalatest" %% "scalatest" % "2.2.2" % "test"
+  val scalatest = "org.scalatest" %% "scalatest" % "2.2.2" % "test"
 
   val logback = Seq (
     "ch.qos.logback" % "logback-classic" % "1.1.2",
@@ -72,7 +72,7 @@ object IrisBuild extends Build {
         exportJars := true,
         libraryDependencies ++= Seq(
           apacheio, guava, jsr305, akkaActor, akkaSlf4j,
-          scalaTest
+          scalatest
         )
       )
   ) dependsOn(model, common)
@@ -110,7 +110,8 @@ object IrisBuild extends Build {
       Seq (
         exportJars := true,
         libraryDependencies ++= Seq(
-          akkaActor, akkaSlf4j
+          akkaActor, akkaSlf4j,
+          scalatest
         )
       )
   ) dependsOn common
@@ -158,7 +159,8 @@ object IrisBuild extends Build {
         libraryDependencies ++= Seq(
           akkaActor, akkaSlf4j, sprayCan, sprayRouting
         ),
-        libraryDependencies ++= logback
+        libraryDependencies ++= logback,
+        libraryDependencies += scalatest
       )
   ) dependsOn (model, common, localStorage, fuseJna, fs, gossip, dht, distributedStorage)
 
