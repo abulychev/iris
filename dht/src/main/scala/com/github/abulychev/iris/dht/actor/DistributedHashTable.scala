@@ -8,7 +8,7 @@ import scala.collection.JavaConversions._
 import scala.collection.mutable.ListBuffer
 import scala.util.Failure
 import scala.collection.mutable
-import com.github.abulychev.iris.dht.actor.http.{HttpStorageHandler, HttpStorageClient}
+import com.github.abulychev.iris.dht.actor.remote.{StorageHandler, StorageClient}
 import scala.concurrent.duration.Duration
 
 /**
@@ -62,7 +62,7 @@ class DistributedHashTable(localAddress: InetSocketAddress,
   }
 
   override def preStart() {
-    context.actorOf(HttpStorageHandler.props(localStorage, localAddress), "http-handler")
+    context.actorOf(StorageHandler.props(localStorage, localAddress), "handler")
   }
 
   def receive = {
@@ -121,7 +121,7 @@ class DistributedHashTable(localAddress: InetSocketAddress,
       log.info(s"Up endpoint: $endpoint")
       nodes += token -> endpoint
 
-      val connection = context.actorOf(HttpStorageClient.props(endpoint))
+      val connection = context.actorOf(StorageClient.props(endpoint))
       connections += endpoint -> connection
 
       /* Put values */
@@ -136,6 +136,8 @@ class DistributedHashTable(localAddress: InetSocketAddress,
     case Down(endpoint, token) =>
       log.info(s"Down endpoint: $endpoint")
       nodes -= token
+
+      context.stop(connections(endpoint))
       connections -= endpoint
 
       /* Resend values */

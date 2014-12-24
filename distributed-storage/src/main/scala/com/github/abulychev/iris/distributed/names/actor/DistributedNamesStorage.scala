@@ -16,15 +16,15 @@ class DistributedNamesStorage(home: File,
                                routing: ActorRef,
                                endpoint: InetSocketAddress,
                                token: Token,
-                               prefix: String,
+                               code: Byte,
                                handler: ActorRef) extends Actor with ActorLogging {
 
   import DistributedNamesStorage._
 
-  val controller = context.actorOf(VersionsController.props(home, storage, routing, endpoint, token, prefix))
-  val http = context.actorOf(NamesHttpService.props(endpoint, controller), "http-names-service")
+  val controller = context.actorOf(VersionsController.props(home, storage, routing, endpoint, token, code))
+  val http = context.actorOf(NamesService.props(controller), "http-names-service")
 
-  handler ! DistributedStorage.RegisterHttpService(prefix, http)
+  handler ! DistributedStorage.RegisterService(10, http)
 
   def receive = {
     case put @ NameNode.PutFile(_, _, _) =>
@@ -61,7 +61,7 @@ object DistributedNamesStorage {
              routing: ActorRef,
              endpoint: InetSocketAddress,
              token: Token,
-             prefix: String,
+             code: Byte,
              handler: ActorRef): Props =
      Props(classOf[DistributedNamesStorage],
        home,
@@ -69,7 +69,7 @@ object DistributedNamesStorage {
        routing,
        endpoint,
        token,
-       prefix,
+       code,
        handler)
 
 

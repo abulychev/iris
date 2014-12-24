@@ -1,6 +1,6 @@
 package com.github.abulychev.iris.gossip.actor
 
-import akka.actor.{ActorLogging, ActorRef, Actor}
+import akka.actor._
 import java.net.InetSocketAddress
 import concurrent.duration._
 import scala.util.Random
@@ -8,11 +8,18 @@ import scala.collection.mutable
 import com.github.abulychev.iris.gossip.node.HeartbeatState.Generation
 import com.github.abulychev.iris.serialize.Serializer
 import com.github.abulychev.iris.gossip.node._
+import com.github.abulychev.iris.gossip.Gossip
+import com.github.abulychev.iris.util.rpc.{Rpc, ClientBuilder}
+import com.github.abulychev.iris.util.rpc.ClientBuilder._
+import com.github.abulychev.iris.gossip.node.GossipAck2
+import com.github.abulychev.iris.gossip.node.GossipAck
 import com.github.abulychev.iris.gossip.node.ApplicationState
 import scala.Some
-import com.github.abulychev.iris.gossip.node.GossipPacket
+import com.github.abulychev.iris.gossip.node.EndpointState
 import com.github.abulychev.iris.gossip.node.GossipSyn
-import com.github.abulychev.iris.gossip.Gossip
+import akka.util.ByteString
+import com.github.abulychev.iris.util.rpc.tcp.{ClientManager, Server}
+import com.github.abulychev.iris.util.rpc.udp.UdpSocket
 
 /**
  * User: abulychev
@@ -25,7 +32,8 @@ class NodeActor[K,V](handler: ActorRef,
                     (implicit val appStateSerializer: Serializer[ApplicationState[K,V]])
   extends Actor
   with ActorLogging
-  with StatesHolder[K,V] {
+  with StatesHolder[K,V]
+  with Serializing[K,V] {
 
   import NodeActor._
 
@@ -34,52 +42,40 @@ class NodeActor[K,V](handler: ActorRef,
   private val reachableEndpoints = mutable.Set.empty[InetSocketAddress]
   private val unreachableEndpoints = mutable.Set.empty[InetSocketAddress]
 
-  private val connector = context.actorOf(UdpConnector.props(self, localAddress, generation), "udp-connector")
   private val failureDetector = context.actorOf(FailureDetector.props(self), "failure-detector")
+
+  /* UDP */
+  val socket = context.actorOf(Props(classOf[UdpSocket], localAddress, self), "socket")
+  implicit val cb = ClientBuilder(socket)
+
+  /* TCP */
+//  val socket = context.actorOf(Props(classOf[Server], localAddress, self), "socket")
+//  val clients = context.actorOf(Props(classOf[ClientManager]), "clients")
+//  implicit val cb = ClientBuilder(clients)
+
+  context.watch(socket)
 
   override def preStart() {
     init(generation)
   }
 
+  context.system.scheduler.schedule(1 second, 1 second, self, Exchange)(context.dispatcher)
+  handler ! Gossip.Bound
+
   def receive = {
-    case Gossip.Bound =>
-      import scala.concurrent.ExecutionContext.Implicits.global
-      context.become(ready(sender()))
-      context.system.scheduler.schedule(1 second, 1 second, self, Exchange)
-      handler ! Gossip.Bound
-  }
+    case Terminated(actor) if socket == actor =>
+      context.stop(self)
 
-  def ready(socket: ActorRef): Receive = {
-    case UdpConnector.Received(packet, remote) =>
-      packet match {
-        case GossipPacket(_, Some(generation), _) if this.generation != generation =>
-          log.debug("Received message not for my generation. Drop it")
+    case Rpc.Request(bytes) =>
+      val packet = serializer.fromBinary(bytes.toArray)
+      process(packet)
 
+    case Rpc.Response(bytes) =>
+      val packet = serializer.fromBinary(bytes.toArray)
+      process(packet)
 
-        case GossipPacket(Some(rGeneration), _, GossipSyn(digests)) =>
-          log.debug("Received Syn")
-
-          val ack = GossipAck(generateEpStateMap(digests), generateDigests(digests))
-          val msg = GossipPacket(Some(generation), Some(rGeneration), ack)
-
-          socket ! UdpConnector.Send(msg, remote)
-
-        case GossipPacket(Some(rGeneration), _, GossipAck(epStates: Map[InetSocketAddress, EndpointState[K,V]], digests)) =>
-          log.debug("Received Ack")
-
-          mergeWith(epStates)
-
-          val ack2 = GossipAck2(generateEpStateMap(digests))
-          val msg = GossipPacket(None, Some(rGeneration), ack2)
-
-          socket ! UdpConnector.Send(msg, remote)
-
-        case GossipPacket(_, _, GossipAck2(epStates: Map[InetSocketAddress, EndpointState[K,V]])) =>
-          log.debug("Received Ack2")
-
-          mergeWith(epStates)
-
-      }
+    case Rpc.Timeout =>
+      // It's ok
 
     case FailureDetector.Reachable(endpoint, generation) =>
       if (generations(endpoint) == generation) {
@@ -93,7 +89,6 @@ class NodeActor[K,V](handler: ActorRef,
         unreachableEndpoints += endpoint
       }
 
-
     case Gossip.UpdateState(state) =>
       setState(state.asInstanceOf[ApplicationState[K,V]])
 
@@ -101,12 +96,12 @@ class NodeActor[K,V](handler: ActorRef,
       incrementHeartbeat()
 
       val syn = GossipSyn(generateDigests)
-      val msg = GossipPacket(Some(generation), None, syn)
+      val bytes = ByteString(serializer.toBinary(syn, 500))
 
       val alive = randomLiveEndpoint
       
       alive foreach { case endpoint =>
-        socket ! UdpConnector.Send(msg, endpoint)
+        client(endpoint) ! Rpc.Request(bytes, 5.seconds)
       }
       
       val isSeed = alive.exists(seeds.contains)
@@ -116,18 +111,48 @@ class NodeActor[K,V](handler: ActorRef,
       val prob = unreachableEndpointCount / (liveEndpointCount + 1)
       if (unreachableEndpointCount > 0 && Random.nextDouble() < prob) {
         randomUnreachableEndpoint foreach { case endpoint =>
-          socket ! UdpConnector.Send(msg, endpoint)
+          client(endpoint) ! Rpc.Request(bytes, 5.seconds)
         }
       }
 
       if (!isSeed || liveEndpointCount < seeds.size) {
         randomSeedEndpoint foreach { case endpoint =>
-          socket ! UdpConnector.Send(msg, endpoint)
+          client(endpoint) ! Rpc.Request(bytes, 5.seconds)
         }
       }
 
     case msg =>
       log.error(s"Unhandled message: {$msg}")
+  }
+
+  def process = PartialFunction[GossipMessage, Unit] {
+    //case GossipPacket(_, Some(generation), _) if this.generation != generation =>
+    //  log.debug("Received message not for my generation. Drop it")
+
+
+    case GossipSyn(digests) =>
+      log.debug("Received Syn")
+
+      val ack = GossipAck(generateEpStateMap(digests), generateDigests(digests))
+      val bytes = ByteString(serializer.toBinary(ack, 500))
+
+      sender ! Rpc.Request(bytes, 5.seconds)
+
+
+    case GossipAck(epStates: Map[InetSocketAddress, EndpointState[K,V]], digests) =>
+      log.debug("Received Ack")
+
+      mergeWith(epStates)
+
+      val ack2 = GossipAck2(generateEpStateMap(digests))
+      val bytes = ByteString(serializer.toBinary(ack2, 500))
+
+      sender ! Rpc.Response(bytes)
+
+    case GossipAck2(epStates: Map[InetSocketAddress, EndpointState[K,V]]) =>
+      log.debug("Received Ack2")
+
+      mergeWith(epStates)
   }
 
   def mergeWith(epStates: Map[InetSocketAddress, EndpointState[K,V]]): Unit = mergeWith(

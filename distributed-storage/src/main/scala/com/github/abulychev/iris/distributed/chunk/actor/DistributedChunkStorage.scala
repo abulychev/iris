@@ -17,7 +17,7 @@ class DistributedChunkStorage(storage: ActorRef,
   extends DistributedStorage(
        storage,
        routingService,
-       "chunk",
+       5,
        StringSerializer,
        ByteArraySerializer,
        handler) {

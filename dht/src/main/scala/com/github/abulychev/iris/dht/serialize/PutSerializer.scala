@@ -22,6 +22,4 @@ object PutSerializer extends Serializer[Put] {
       LongSerializer.readFrom(in)
     )
   }
-
-
 }

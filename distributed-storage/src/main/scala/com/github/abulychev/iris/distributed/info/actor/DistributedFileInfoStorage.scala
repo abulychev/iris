@@ -19,7 +19,7 @@ class DistributedFileInfoStorage(storage: ActorRef,
   extends DistributedStorage(
     storage,
     routingService,
-    "info",
+    1,
     StringSerializer,
     FileContentInfoSerializer,
     handler) {

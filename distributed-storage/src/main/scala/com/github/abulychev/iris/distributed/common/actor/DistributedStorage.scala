@@ -12,7 +12,7 @@ import com.github.abulychev.iris.serialize.{OptionSerializer, Serializer}
  */
 abstract class DistributedStorage[K,V](storage: ActorRef,
                                        routingService: ActorRef,
-                                       prefix: String,
+                                       code: Byte,
                                        keySerializer: Serializer[K],
                                        valueSerializer: Serializer[V],
                                        handler: ActorRef) extends Actor with ActorLogging {
@@ -35,7 +35,7 @@ abstract class DistributedStorage[K,V](storage: ActorRef,
       intoInternal,
       fromInternal
     ))
-    handler ! RegisterHttpService(prefix, http)
+    handler ! RegisterService(code, http)
     storage ! fromInternal(GetAllKeys)
   }
 
@@ -71,7 +71,7 @@ abstract class DistributedStorage[K,V](storage: ActorRef,
           } else {
             context.actorOf(StorageHttpClient.props(
               routes.head,
-              prefix,
+              code,
               key,
               keySerializer,
               responseSerializer,
@@ -130,5 +130,5 @@ object DistributedStorage {
   case class RoutesResponse(routes: List[InetSocketAddress]) extends Message
   //case object RouteAcknowledged extends Message
 
-  case class RegisterHttpService(prefix: String, actor: ActorRef)
+  case class RegisterService(code: Byte, actor: ActorRef)
 }

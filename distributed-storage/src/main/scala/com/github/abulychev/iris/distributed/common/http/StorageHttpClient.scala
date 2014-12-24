@@ -2,44 +2,43 @@ package com.github.abulychev.iris.distributed.common.http
 
 import akka.actor._
 import java.net.InetSocketAddress
-import spray.can.Http
-import akka.io.IO
-import spray.http.{HttpResponse, HttpEntity, Uri, HttpRequest}
-import spray.http.HttpMethods._
-import spray.http.MediaTypes._
 import scala.concurrent.duration._
 import com.github.abulychev.iris.distributed.common.actor.DistributedStorage
 import DistributedStorage.Response
 import scala.util.Failure
 import com.github.abulychev.iris.serialize.Serializer
+import com.github.abulychev.iris.util.rpc.tcp.ClientManager
+import com.github.abulychev.iris.util.rpc.{Rpc, ClientBuilder}
+import com.github.abulychev.iris.util.rpc.ClientBuilder._
+import akka.util.ByteString
 
 /**
  * User: abulychev
  * Date: 10/23/14
  */
 class StorageHttpClient[K,V](endpoint: InetSocketAddress,
-                             prefix: String,
+                             code: Byte,
                              key: K,
                              keySerializer: Serializer[K],
                              responseSerializer: Serializer[Option[V]],
                              req: ActorRef) extends Actor with ActorLogging {
 
-  private val url = s"http://${endpoint.getHostName}:${endpoint.getPort}/$prefix/get"
+  // Make it common
+  val clients = context.actorOf(Props(classOf[ClientManager]), "clients")
+  implicit val cb = ClientBuilder(clients)
 
   override def preStart() {
-    import context.system
-    val bytes = keySerializer.toBinary(key)
-    IO(Http) ! HttpRequest(GET, Uri(url), entity = HttpEntity(`application/octet-stream`, bytes))
-    context.setReceiveTimeout(10 seconds)
+    val bytes = ByteString(keySerializer.toBinary(key))
+    client(endpoint) ! Rpc.Request(ByteString(code) ++ bytes, 10.seconds)
   }
 
   def receive: Receive = {
-    case response: HttpResponse =>
-      val value = responseSerializer.fromBinary(response.entity.data.toByteArray)
+    case Rpc.Response(bytes) =>
+      val value = responseSerializer.fromBinary(bytes.toArray)
       req ! Response(value)
       context.stop(self)
 
-    case ReceiveTimeout =>
+    case Rpc.Timeout =>
       req ! Failure(new Error("Timeout"))
       context.stop(self)
   }
@@ -47,14 +46,14 @@ class StorageHttpClient[K,V](endpoint: InetSocketAddress,
 
 object StorageHttpClient {
   def props[K,V](endpoint: InetSocketAddress,
-                 prefix: String,
+                 code: Byte,
                  key: K,
                  keySerializer: Serializer[K],
                  valueSerializer: Serializer[Option[V]],
                  req: ActorRef) =
     Props(classOf[StorageHttpClient[K,V]],
       endpoint,
-      prefix,
+      code,
       key,
       keySerializer,
       valueSerializer,

@@ -13,7 +13,7 @@ object Main extends App {
 
   log.info("Starting application ...")
 
-  if (args.length >= 2) {
+  if (args.length < 2) {
     log.error("Usage: run.sh [home] [mount point]")
     System.exit(1)
   }
@@ -26,10 +26,10 @@ object Main extends App {
     System.exit(1)
   }
 
-  if (mountPoint.listFiles.length == 0) {
+  if (mountPoint.listFiles.length != 0) {
     log.error("Mount point directory should be empty")
     System.exit(1)
   }
 
-  ApplicationBuilder.build(home, mountPoint)
+  ApplicationBuilder.build(mountPoint, home)
 }

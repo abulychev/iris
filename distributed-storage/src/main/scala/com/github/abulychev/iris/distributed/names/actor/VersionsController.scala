@@ -22,7 +22,7 @@ class VersionsController(home: File,
                          routing: ActorRef,
                          endpoint: InetSocketAddress,
                          token: Token,
-                         prefix: String) extends Actor with ActorLogging {
+                         code: Byte) extends Actor with ActorLogging {
   import VersionsController._
 
   private val versionsStorage = new VersionedNamesStorage(home)
@@ -97,14 +97,14 @@ object VersionsController {
              routing: ActorRef,
              endpoint: InetSocketAddress,
              token: Token,
-             prefix: String): Props =
+             code: Byte): Props =
      Props(classOf[VersionsController],
        home,
        storage,
        routing,
        endpoint,
        token,
-       prefix)
+       code)
 
    case object Tick
  }

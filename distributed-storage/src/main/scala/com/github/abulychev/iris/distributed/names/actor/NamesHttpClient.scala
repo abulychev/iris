@@ -1,23 +1,24 @@
 package com.github.abulychev.iris.distributed.names.actor
 
-import akka.actor.{ReceiveTimeout, Props, ActorLogging, Actor}
+import akka.actor.{Props, ActorLogging, Actor}
 import java.net.InetSocketAddress
-import akka.io.IO
-import spray.can.Http
-import spray.http.{HttpResponse, HttpEntity, Uri, HttpRequest}
-import spray.http.HttpMethods._
-import spray.http.MediaTypes._
 import scala.concurrent.duration._
 import scala.util.Failure
 import com.github.abulychev.iris.distributed.names.serialize.{VersionsListSerializer, UpdateListSerializer}
 import com.github.abulychev.iris.distributed.names.VersionsList
+import com.github.abulychev.iris.util.rpc.tcp.ClientManager
+import com.github.abulychev.iris.util.rpc.{Rpc, ClientBuilder}
+import com.github.abulychev.iris.util.rpc.ClientBuilder._
+import akka.util.ByteString
 
 /**
  * User: abulychev
  * Date: 10/21/14
  */
 class NamesHttpClient private(endpoint: InetSocketAddress) extends Actor with ActorLogging {
-  private val url = s"http://${endpoint.getHostName}:${endpoint.getPort}/names/get"
+  // Make it common
+  val clients = context.actorOf(Props(classOf[ClientManager]), "clients")
+  implicit val cb = ClientBuilder(clients)
 
   def receive = {
     case versions @ VersionsList(_) =>
@@ -25,19 +26,17 @@ class NamesHttpClient private(endpoint: InetSocketAddress) extends Actor with Ac
 
       context.actorOf(Props(new Actor {
         override def preStart() {
-          import context.system
-          val bytes = VersionsListSerializer.toBinary(versions)
-          IO(Http) ! HttpRequest(GET, Uri(url), entity = HttpEntity(`application/octet-stream`, bytes))
-          context.setReceiveTimeout(10 seconds)
+          val bytes = ByteString(VersionsListSerializer.toBinary(versions))
+          client(endpoint) ! Rpc.Request(ByteString(10) ++ bytes, 10.seconds)
         }
 
         def receive: Receive = {
-          case response: HttpResponse =>
-            val updates = UpdateListSerializer.fromBinary(response.entity.data.toByteArray)
+          case Rpc.Response(bytes) =>
+            val updates = UpdateListSerializer.fromBinary(bytes.toArray)
             req ! updates
             context.stop(self)
 
-          case ReceiveTimeout =>
+          case Rpc.Timeout =>
             req ! Failure(new Exception)
             context.stop(self)
         }

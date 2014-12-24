@@ -3,7 +3,7 @@ import Keys._
 
 object BuildSettings {
   val buildOrganization = "com.github.abulychev"
-  val buildVersion      = "0.0.1"
+  val buildVersion      = "0.0.1-SNAPSHOT"
   val buildScalaVersion = "2.10.3"
 
   val sharedSettings = Seq (
@@ -58,10 +58,23 @@ object IrisBuild extends Build {
       Seq (
         exportJars := true,
         libraryDependencies ++= Seq(
-          akkaActor, sprayCan, sprayRouting
+          akkaActor
         )
       )
   )
+
+  lazy val rpc = Project (
+    id = "util-rpc",
+    base = file("util-rpc"),
+    settings = Defaults.defaultSettings ++
+      sharedSettings ++
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          akkaActor, akkaSlf4j
+        )
+      )
+  ) dependsOn common
 
   lazy val localStorage = Project (
     id = "local-storage",
@@ -114,7 +127,7 @@ object IrisBuild extends Build {
           scalatest
         )
       )
-  ) dependsOn common
+  ) dependsOn (common, rpc)
 
   lazy val dht = Project (
     id = "dht",
@@ -124,10 +137,10 @@ object IrisBuild extends Build {
       Seq (
         exportJars := true,
         libraryDependencies ++= Seq(
-          akkaActor, akkaSlf4j, sprayCan, sprayRouting
+          akkaActor, akkaSlf4j
         )
       )
-  ) dependsOn common
+  ) dependsOn (common, rpc)
 
   lazy val distributedStorage = Project (
     id = "distributed-storage",
@@ -137,10 +150,10 @@ object IrisBuild extends Build {
       Seq (
         exportJars := true,
         libraryDependencies ++= Seq(
-          akkaActor, akkaSlf4j, sprayCan, sprayRouting
+          akkaActor, akkaSlf4j
         )
       )
-  ) dependsOn(common, localStorage, gossip, dht)
+  ) dependsOn(common, localStorage, gossip, dht, rpc)
 
 //  lazy val multiNode = Project (
 //    id = "multi-node",
@@ -157,12 +170,12 @@ object IrisBuild extends Build {
       Seq (
         exportJars := true,
         libraryDependencies ++= Seq(
-          akkaActor, akkaSlf4j, sprayCan, sprayRouting
+          akkaActor, akkaSlf4j
         ),
         libraryDependencies ++= logback,
         libraryDependencies += scalatest
       )
-  ) dependsOn (model, common, localStorage, fuseJna, fs, gossip, dht, distributedStorage)
+  ) dependsOn (model, common, localStorage, fuseJna, fs, gossip, dht, distributedStorage, rpc)
 
   /* Assembly section */
 

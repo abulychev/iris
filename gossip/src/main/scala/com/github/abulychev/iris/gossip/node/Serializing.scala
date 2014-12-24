@@ -20,5 +20,5 @@ trait Serializing[K,V] {
   implicit val ackSerializer = new GossipAckSerializer[K,V]
   implicit val ack2Serializer = new GossipAck2Serializer[K,V]
 
-  implicit val serializer = new GossipPacketSerializer[K,V]
+  implicit val serializer = new GossipMessageSerializer[K,V]
 }

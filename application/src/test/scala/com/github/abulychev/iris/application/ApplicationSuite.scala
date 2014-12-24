@@ -73,7 +73,6 @@ class ApplicationSuite extends FunSuite with BeforeAndAfter {
     stop(0)
   }
 
-
   test("two nodes should synchronize") {
     run(0)
 

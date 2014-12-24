@@ -1,14 +1,12 @@
 package com.github.abulychev.iris.distributed.common.http
 
-import spray.routing.HttpServiceActor
-import akka.actor.{Props, Actor, ActorRef}
-import spray.http.HttpEntity
-import spray.http.MediaTypes._
-import spray.http.HttpResponse
+import akka.actor.{ActorLogging, Props, Actor, ActorRef}
 import com.github.abulychev.iris.distributed.common.actor.DistributedStorage
 import DistributedStorage.{Message, Response, Get}
 import scala.util.Failure
 import com.github.abulychev.iris.serialize.{OptionSerializer, Serializer}
+import com.github.abulychev.iris.util.rpc.Rpc
+import akka.util.ByteString
 
 /**
  * User: abulychev
@@ -18,34 +16,29 @@ class StorageHttpService[K,V] private (storage: ActorRef,
                                        keySerializer: Serializer[K],
                                        valueSerializer: Serializer[V],
                                        intoInternal: PartialFunction[Any, Any],
-                                       fromInternal: PartialFunction[Message, Any]) extends HttpServiceActor {
+                                       fromInternal: PartialFunction[Message, Any]) extends Actor with ActorLogging {
 
   val responseSerializer = OptionSerializer(valueSerializer)
 
-  val route = {
-    path("get") {
-      get { ctx =>
-        context.actorOf(Props(new Actor {
-          val bytes = ctx.request.entity.data.toByteArray
-          val key = keySerializer.fromBinary(bytes)
+  def receive = {
+    case Rpc.Request(bytes) =>
+      val req = sender()
 
-          storage ! fromInternal(Get(key))
+      val key = keySerializer.fromBinary(bytes.toArray)
 
-          def receive = intoInternal andThen {
-            case Failure(_) => Response(None)
-            case x => x
-          } andThen {
-            case Response(result: Option[V]) =>
-              val entity = HttpEntity(`application/octet-stream`, responseSerializer.toBinary(result))
-              ctx.complete(HttpResponse(entity = entity))
-              context.stop(self)
-          }
-        }))
-      }
-    }
+      context.actorOf(Props(new Actor {
+        storage ! fromInternal(Get(key))
+
+        def receive = intoInternal andThen {
+          case Failure(_) => Response(None)
+          case x => x
+        } andThen {
+          case Response(result: Option[V]) =>
+            req ! Rpc.Response(ByteString(responseSerializer.toBinary(result)))
+            context.stop(self)
+        }
+      }))
   }
-
-  def receive = runRoute(route)
 }
 
 object StorageHttpService {

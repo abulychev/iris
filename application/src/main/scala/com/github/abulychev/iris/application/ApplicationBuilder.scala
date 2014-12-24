@@ -13,7 +13,7 @@ import com.github.abulychev.iris.distributed.info.actor.{DistributedFileInfoStor
 import com.github.abulychev.iris.distributed.names.actor.{VersionsRoutingActor, DistributedNamesStorage}
 import com.github.abulychev.iris.distributed.cluster.actor.ClusterNode
 import com.github.abulychev.iris.distributed.cluster.{TokenHolder, GenerationHolder}
-import com.github.abulychev.iris.distributed.common.actor.DistributedStorage.RegisterHttpService
+import com.github.abulychev.iris.distributed.common.actor.DistributedStorage.RegisterService
 import com.github.abulychev.iris.distributed.routing.RoutingService
 import com.github.abulychev.iris.localfs.{LocalFS, FSLogging}
 import com.github.abulychev.iris.distributed.chunk.actor.{DistributedChunkStorage, ChunkRoutingActor}
@@ -70,8 +70,8 @@ object ApplicationBuilder {
             home: File,
             host: InetAddress,
             gossipPort: Int,
-            port: Int,
             dhtPort: Int,
+            port: Int,
             seeds: List[InetSocketAddress]): ActorSystem = {
 
     val gossipAddress = new InetSocketAddress(host, gossipPort)
@@ -111,12 +111,12 @@ object ApplicationBuilder {
         self
       ))
 
-      val services = mutable.Map.empty[String, ActorRef]
+      val services = mutable.Map.empty[Byte, ActorRef]
 
       val temporal = context.actorOf(Props(new TemporalStorage(new File(home, "temporal"), dChunkStorage)))
 
       val namenode = system.actorOf(NameNode.props(new File(home, "names"), dInfoStorage), "names-storage")
-      val dNamesStorage = system.actorOf(DistributedNamesStorage.props(new File(home, "versions"), namenode, routingService, namesServiceAddress, token, "names", self), "distributed-names-storage")
+      val dNamesStorage = system.actorOf(DistributedNamesStorage.props(new File(home, "versions"), namenode, routingService, namesServiceAddress, token, 10, self), "distributed-names-storage")
 
       Thread.sleep(1000)
 
@@ -151,9 +151,9 @@ object ApplicationBuilder {
         case ClusterNode.UnreachableData(endpoint) =>
           routingService ! RoutingService.Unreachable(endpoint)
 
-        case RegisterHttpService(prefix, actor) =>
-          services += prefix -> actor
-          if (services.size == 3) context.actorOf(HttpServer.props(host, port, services.toMap))
+        case RegisterService(code, actor) =>
+          services += code -> actor
+          if (services.size == 3) context.actorOf(TcpHandler.props(new InetSocketAddress(host, port), services.toMap), "tcp")
       }
 
       override def postStop() {
