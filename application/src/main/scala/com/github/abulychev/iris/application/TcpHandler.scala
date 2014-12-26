@@ -4,6 +4,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorLogging, Props, ActorRef}
 import com.github.abulychev.iris.util.rpc.Rpc
 import com.github.abulychev.iris.util.rpc.tcp.Server
+import com.github.abulychev.iris.Service
 
 
 /**
@@ -37,6 +38,9 @@ class TcpHandler private(localAddress: InetSocketAddress,
 }
 
 object TcpHandler {
-  def props(localAddress: InetSocketAddress, services: Map[Byte, ActorRef]) =
-    Props(classOf[TcpHandler], localAddress, services)
+  def props(localAddress: InetSocketAddress, services: Map[Service, ActorRef]) =
+    Props(classOf[TcpHandler],
+      localAddress,
+      services map { case (service, actor) => service.code -> actor }
+    )
 }

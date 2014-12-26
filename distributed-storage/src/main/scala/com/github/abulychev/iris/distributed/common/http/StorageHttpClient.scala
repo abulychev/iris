@@ -11,13 +11,14 @@ import com.github.abulychev.iris.util.rpc.tcp.ClientManager
 import com.github.abulychev.iris.util.rpc.{Rpc, ClientBuilder}
 import com.github.abulychev.iris.util.rpc.ClientBuilder._
 import akka.util.ByteString
+import com.github.abulychev.iris.Service
 
 /**
  * User: abulychev
  * Date: 10/23/14
  */
 class StorageHttpClient[K,V](endpoint: InetSocketAddress,
-                             code: Byte,
+                             service: Service,
                              key: K,
                              keySerializer: Serializer[K],
                              responseSerializer: Serializer[Option[V]],
@@ -29,7 +30,7 @@ class StorageHttpClient[K,V](endpoint: InetSocketAddress,
 
   override def preStart() {
     val bytes = ByteString(keySerializer.toBinary(key))
-    client(endpoint) ! Rpc.Request(ByteString(code) ++ bytes, 10.seconds)
+    client(endpoint) ! Rpc.Request(ByteString(service.code) ++ bytes, 10.seconds)
   }
 
   def receive: Receive = {
@@ -46,14 +47,14 @@ class StorageHttpClient[K,V](endpoint: InetSocketAddress,
 
 object StorageHttpClient {
   def props[K,V](endpoint: InetSocketAddress,
-                 code: Byte,
+                 service: Service,
                  key: K,
                  keySerializer: Serializer[K],
                  valueSerializer: Serializer[Option[V]],
                  req: ActorRef) =
     Props(classOf[StorageHttpClient[K,V]],
       endpoint,
-      code,
+      service,
       key,
       keySerializer,
       valueSerializer,

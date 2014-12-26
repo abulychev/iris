@@ -4,8 +4,8 @@ import akka.actor.{Props, ActorRef, Actor, ActorLogging}
 import com.github.abulychev.iris.storage.local.names.actor.NameNode
 import java.net.InetSocketAddress
 import java.io.File
-import com.github.abulychev.iris.distributed.common.actor.DistributedStorage
 import com.github.abulychev.iris.dht.actor.Token
+import com.github.abulychev.iris.{NameService, RegisterService}
 
 /**
   * User: abulychev
@@ -16,15 +16,15 @@ class DistributedNamesStorage(home: File,
                                routing: ActorRef,
                                endpoint: InetSocketAddress,
                                token: Token,
-                               code: Byte,
-                               handler: ActorRef) extends Actor with ActorLogging {
+                               handler: ActorRef,
+                               registry: ActorRef) extends Actor with ActorLogging {
 
   import DistributedNamesStorage._
 
-  val controller = context.actorOf(VersionsController.props(home, storage, routing, endpoint, token, code))
-  val http = context.actorOf(NamesService.props(controller), "http-names-service")
+  val controller = context.actorOf(VersionsController.props(home, storage, routing, endpoint, token))
+  val http = context.actorOf(NamesService.props(controller), "remote-name-service-handler")
 
-  handler ! DistributedStorage.RegisterService(10, http)
+  registry ! RegisterService(NameService, http)
 
   def receive = {
     case put @ NameNode.PutFile(_, _, _) =>
@@ -61,16 +61,16 @@ object DistributedNamesStorage {
              routing: ActorRef,
              endpoint: InetSocketAddress,
              token: Token,
-             code: Byte,
-             handler: ActorRef): Props =
+             handler: ActorRef,
+             registry: ActorRef): Props =
      Props(classOf[DistributedNamesStorage],
        home,
        storage,
        routing,
        endpoint,
        token,
-       code,
-       handler)
+       handler,
+       registry)
 
 
    case class VersionDiscovered(token: Token, version: Long)

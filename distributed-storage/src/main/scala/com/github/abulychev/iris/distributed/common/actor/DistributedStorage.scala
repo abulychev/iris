@@ -5,6 +5,7 @@ import scala.util.Failure
 import java.net.InetSocketAddress
 import com.github.abulychev.iris.distributed.common.http.{StorageHttpService, StorageHttpClient}
 import com.github.abulychev.iris.serialize.{OptionSerializer, Serializer}
+import com.github.abulychev.iris.{Service, RegisterService}
 
 /**
  * User: abulychev
@@ -12,10 +13,10 @@ import com.github.abulychev.iris.serialize.{OptionSerializer, Serializer}
  */
 abstract class DistributedStorage[K,V](storage: ActorRef,
                                        routingService: ActorRef,
-                                       code: Byte,
+                                       service: Service,
                                        keySerializer: Serializer[K],
                                        valueSerializer: Serializer[V],
-                                       handler: ActorRef) extends Actor with ActorLogging {
+                                       registry: ActorRef) extends Actor with ActorLogging {
   
   import DistributedStorage._
   
@@ -35,7 +36,8 @@ abstract class DistributedStorage[K,V](storage: ActorRef,
       intoInternal,
       fromInternal
     ))
-    handler ! RegisterService(code, http)
+
+    registry ! RegisterService(service, http)
     storage ! fromInternal(GetAllKeys)
   }
 
@@ -71,7 +73,7 @@ abstract class DistributedStorage[K,V](storage: ActorRef,
           } else {
             context.actorOf(StorageHttpClient.props(
               routes.head,
-              code,
+              service,
               key,
               keySerializer,
               responseSerializer,
@@ -129,6 +131,4 @@ object DistributedStorage {
   case class GetRoutes[K](key: K) extends Message
   case class RoutesResponse(routes: List[InetSocketAddress]) extends Message
   //case object RouteAcknowledged extends Message
-
-  case class RegisterService(code: Byte, actor: ActorRef)
 }

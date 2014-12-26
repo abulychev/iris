@@ -10,6 +10,7 @@ import com.github.abulychev.iris.util.rpc.tcp.ClientManager
 import com.github.abulychev.iris.util.rpc.{Rpc, ClientBuilder}
 import com.github.abulychev.iris.util.rpc.ClientBuilder._
 import akka.util.ByteString
+import com.github.abulychev.iris.NameService
 
 /**
  * User: abulychev
@@ -27,7 +28,7 @@ class NamesHttpClient private(endpoint: InetSocketAddress) extends Actor with Ac
       context.actorOf(Props(new Actor {
         override def preStart() {
           val bytes = ByteString(VersionsListSerializer.toBinary(versions))
-          client(endpoint) ! Rpc.Request(ByteString(10) ++ bytes, 10.seconds)
+          client(endpoint) ! Rpc.Request(ByteString(NameService.code) ++ bytes, 10.seconds)
         }
 
         def receive: Receive = {

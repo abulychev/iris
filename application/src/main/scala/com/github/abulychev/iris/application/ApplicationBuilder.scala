@@ -6,14 +6,12 @@ import com.github.abulychev.iris.localfs.actor.FSActor
 import com.github.abulychev.iris.storage.local.names.actor.NameNode
 import java.net.{URI, InetAddress, InetSocketAddress}
 import com.github.abulychev.iris.dht.actor.DistributedHashTable
-import scala.collection.mutable
 import com.github.abulychev.iris.storage.local.info.actor.FileInfoStorage
 import com.github.abulychev.iris.storage.local.chunk.actor.{TemporalStorage, ChunkStorage}
 import com.github.abulychev.iris.distributed.info.actor.{DistributedFileInfoStorage, InfoRoutingActor}
 import com.github.abulychev.iris.distributed.names.actor.{VersionsRoutingActor, DistributedNamesStorage}
 import com.github.abulychev.iris.distributed.cluster.actor.ClusterNode
 import com.github.abulychev.iris.distributed.cluster.{TokenHolder, GenerationHolder}
-import com.github.abulychev.iris.distributed.common.actor.DistributedStorage.RegisterService
 import com.github.abulychev.iris.distributed.routing.RoutingService
 import com.github.abulychev.iris.localfs.{LocalFS, FSLogging}
 import com.github.abulychev.iris.distributed.chunk.actor.{DistributedChunkStorage, ChunkRoutingActor}
@@ -96,27 +94,27 @@ object ApplicationBuilder {
 
       val routingService = context.actorOf(Props(classOf[RoutingService], versionsRouting, infoRouting, chunkRouting), "routing-service")
 
+      val aggregator = context.actorOf(Props(classOf[ServicesAggregator], self, 3))
+
       /* Storages */
       val infoStorage = context.actorOf(FileInfoStorage.props(new File(home, "info")))
       val dInfoStorage = context.actorOf(Props(classOf[DistributedFileInfoStorage],
         infoStorage,
         routingService,
-        self
+        aggregator
       ))
 
       val chunkStorage = context.actorOf(ChunkStorage.props(new File(home, "chunks")))
       val dChunkStorage = context.actorOf(Props(classOf[DistributedChunkStorage],
         chunkStorage,
         routingService,
-        self
+        aggregator
       ))
-
-      val services = mutable.Map.empty[Byte, ActorRef]
 
       val temporal = context.actorOf(Props(new TemporalStorage(new File(home, "temporal"), dChunkStorage)))
 
       val namenode = system.actorOf(NameNode.props(new File(home, "names"), dInfoStorage), "names-storage")
-      val dNamesStorage = system.actorOf(DistributedNamesStorage.props(new File(home, "versions"), namenode, routingService, namesServiceAddress, token, 10, self), "distributed-names-storage")
+      val dNamesStorage = system.actorOf(DistributedNamesStorage.props(new File(home, "versions"), namenode, routingService, namesServiceAddress, token, self, aggregator), "distributed-names-storage")
 
       Thread.sleep(1000)
 
@@ -151,9 +149,8 @@ object ApplicationBuilder {
         case ClusterNode.UnreachableData(endpoint) =>
           routingService ! RoutingService.Unreachable(endpoint)
 
-        case RegisterService(code, actor) =>
-          services += code -> actor
-          if (services.size == 3) context.actorOf(TcpHandler.props(new InetSocketAddress(host, port), services.toMap), "tcp")
+        case ServicesAggregator.Collected(services) =>
+          context.actorOf(TcpHandler.props(new InetSocketAddress(host, port), services), "tcp")
       }
 
       override def postStop() {

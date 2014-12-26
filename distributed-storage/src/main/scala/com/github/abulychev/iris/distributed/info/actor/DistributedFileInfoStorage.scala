@@ -8,6 +8,7 @@ import com.github.abulychev.iris.distributed.common.actor.DistributedStorage
 import com.github.abulychev.iris.distributed.common.actor.DistributedStorage.Message
 import com.github.abulychev.iris.serialize.StringSerializer
 import com.github.abulychev.iris.model.FileContentInfo
+import com.github.abulychev.iris.InfoService
 
 /**
  * User: abulychev
@@ -15,14 +16,14 @@ import com.github.abulychev.iris.model.FileContentInfo
  */
 class DistributedFileInfoStorage(storage: ActorRef,
                                  routingService: ActorRef,
-                                 handler: ActorRef)
+                                 registry: ActorRef)
   extends DistributedStorage(
     storage,
     routingService,
-    1,
+    InfoService,
     StringSerializer,
     FileContentInfoSerializer,
-    handler) {
+    registry) {
 
   def translateIntoMessage = PartialFunction[Any, Message] {
     case FileInfoStorage.Get(id) => DistributedStorage.Get(id)

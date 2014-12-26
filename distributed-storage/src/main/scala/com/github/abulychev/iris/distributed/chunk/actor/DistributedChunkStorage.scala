@@ -6,6 +6,7 @@ import com.github.abulychev.iris.storage.local.chunk.actor.ChunkStorage
 import com.github.abulychev.iris.distributed.common.actor.DistributedStorage
 import com.github.abulychev.iris.distributed.common.actor.DistributedStorage.Message
 import com.github.abulychev.iris.serialize.{ByteArraySerializer, StringSerializer}
+import com.github.abulychev.iris.ChunkService
 
 /**
   * User: abulychev
@@ -13,14 +14,14 @@ import com.github.abulychev.iris.serialize.{ByteArraySerializer, StringSerialize
   */
 class DistributedChunkStorage(storage: ActorRef,
                               routingService: ActorRef,
-                              handler: ActorRef)
+                              registry: ActorRef)
   extends DistributedStorage(
        storage,
        routingService,
-       5,
+       ChunkService,
        StringSerializer,
        ByteArraySerializer,
-       handler) {
+       registry) {
 
   def translateIntoMessage = PartialFunction[Any, Message] {
     case ChunkStorage.Get(id) => DistributedStorage.Get(id)
