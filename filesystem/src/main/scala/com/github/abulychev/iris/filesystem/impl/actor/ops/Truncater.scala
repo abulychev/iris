@@ -1,11 +1,11 @@
-package com.github.abulychev.iris.localfs.actor.file
+package com.github.abulychev.iris.filesystem.impl.actor.ops
 
 import akka.actor.{Props, ActorRef, Actor, ActorLogging}
 import com.github.abulychev.iris.storage.local.chunk.actor.TemporalStorage
 import TemporalStorage.{CreateChunk, Truncate}
 import scala.util.{Success, Failure}
-import com.github.abulychev.iris.localfs.LocalStorage
 import com.github.abulychev.iris.model.{Chunk, FileContentInfo}
+import com.github.abulychev.iris.storage.local.LocalStorage
 
 /**
  * User: abulychev

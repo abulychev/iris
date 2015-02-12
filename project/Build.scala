@@ -90,14 +90,9 @@ object IrisBuild extends Build {
       )
   ) dependsOn(model, common)
 
-  lazy val fuseJna = ProjectRef (
-    id = "fuse-jna",
-    base = file("fuse-jna")
-  )
-
-  lazy val fs = Project (
-    id = "local-fs",
-    base = file("local-fs"),
+  lazy val filesystem = Project (
+    id = "filesystem",
+    base = file("filesystem"),
     settings = Defaults.defaultSettings ++
       sharedSettings ++
       Seq (
@@ -106,7 +101,25 @@ object IrisBuild extends Build {
           akkaActor, akkaSlf4j
         )
       )
-  ) dependsOn(fuseJna, localStorage)
+  ) dependsOn(model, localStorage)
+
+  lazy val fuseJna = ProjectRef (
+    id = "fuse-jna",
+    base = file("fuse-jna")
+  )
+
+  lazy val fuse = Project (
+    id = "fuse",
+    base = file("fuse"),
+    settings = Defaults.defaultSettings ++
+      sharedSettings ++
+      Seq (
+        exportJars := true,
+        libraryDependencies ++= Seq(
+          akkaActor, akkaSlf4j
+        )
+      )
+  ) dependsOn(fuseJna, localStorage, filesystem)
 
 //  lazy val singleNode = Project (
 //    id = "single-node",
@@ -175,7 +188,7 @@ object IrisBuild extends Build {
         libraryDependencies ++= logback,
         libraryDependencies += scalatest
       )
-  ) dependsOn (model, common, localStorage, fuseJna, fs, gossip, dht, distributedStorage, rpc)
+  ) dependsOn (model, common, localStorage, filesystem, fuseJna, fuse, gossip, dht, distributedStorage, rpc)
 
   /* Assembly section */
 

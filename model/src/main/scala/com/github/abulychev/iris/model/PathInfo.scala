@@ -12,6 +12,7 @@ sealed trait PathInfo {
   def timestamp: Long
 
   val tokens = PathInfoUtils.getTokens(path)
+  def name = tokens.last
 }
 
 case class FileInfo(path: String, id: String, size: Int, timestamp: Long) extends PathInfo

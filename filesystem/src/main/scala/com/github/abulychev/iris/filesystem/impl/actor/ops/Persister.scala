@@ -1,4 +1,4 @@
-package com.github.abulychev.iris.localfs.actor.file
+package com.github.abulychev.iris.filesystem.impl.actor.ops
 
 import akka.actor.{ActorRef, ActorLogging, Actor}
 import com.github.abulychev.iris.storage.local.chunk.actor.TemporalStorage

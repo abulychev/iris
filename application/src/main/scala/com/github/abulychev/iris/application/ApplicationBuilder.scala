@@ -2,7 +2,7 @@ package com.github.abulychev.iris.application
 
 import java.io.File
 import akka.actor._
-import com.github.abulychev.iris.localfs.actor.FSActor
+import com.github.abulychev.iris.filesystem.impl.actor.FilesystemHandlerActor
 import com.github.abulychev.iris.storage.local.names.actor.NameNode
 import java.net.{URI, InetAddress, InetSocketAddress}
 import com.github.abulychev.iris.dht.actor.DistributedHashTable
@@ -13,7 +13,7 @@ import com.github.abulychev.iris.distributed.names.actor.{VersionsRoutingActor, 
 import com.github.abulychev.iris.distributed.cluster.actor.ClusterNode
 import com.github.abulychev.iris.distributed.cluster.{TokenHolder, GenerationHolder}
 import com.github.abulychev.iris.distributed.routing.RoutingService
-import com.github.abulychev.iris.localfs.{LocalFS, FSLogging}
+import com.github.abulychev.iris.fuse.{FuseAdapter, FSLogging}
 import com.github.abulychev.iris.distributed.chunk.actor.{DistributedChunkStorage, ChunkRoutingActor}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.slf4j.LoggerFactory
@@ -118,9 +118,9 @@ object ApplicationBuilder {
 
       Thread.sleep(1000)
 
-      val fsActor = system.actorOf(Props(new FSActor(dChunkStorage, temporal, dNamesStorage)))
+      val fsActor = system.actorOf(Props(new FilesystemHandlerActor(dChunkStorage, temporal, dNamesStorage)))
 
-      val fs = new LocalFS(fsActor, dNamesStorage) with FSLogging
+      val fs = new FuseAdapter(fsActor) with FSLogging
 
       new Thread(new Runnable { def run() {
         fs.mount(mountPoint)

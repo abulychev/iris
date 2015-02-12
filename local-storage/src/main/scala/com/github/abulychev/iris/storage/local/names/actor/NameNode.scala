@@ -4,7 +4,6 @@ import akka.actor._
 import com.github.abulychev.iris.storage.local.names.NamesStorage
 import java.io.File
 import com.github.abulychev.iris.storage.local.info.actor.FileInfoStorage
-import scala.Some
 import com.github.abulychev.iris.model._
 import com.github.abulychev.iris.model.RemovedInfo
 import scala.Some
@@ -37,12 +36,8 @@ class NameNode(home: File,
       storage.put(directoryInfo)
       //sender ! Acknowledged
 
-    case DeleteFile(path) =>
-      val removedInfo = RemovedInfo(path, System.currentTimeMillis)
-      storage.put(removedInfo)
-      //sender ! Acknowledged
-
-    case DeleteDirectory(path) =>
+    case Delete(path) =>
+      // TODO: May be check if directory is empty
       val removedInfo = RemovedInfo(path, System.currentTimeMillis)
       storage.put(removedInfo)
       //sender ! Acknowledged
@@ -74,21 +69,18 @@ class NameNode(home: File,
 
     case GetDirectory(path) =>
       val tokens = PathInfoUtils.getTokens(path)
+      val l = tokens.size + 1
 
-      val filenames = fs.values.iterator
+      val files = fs.values.iterator
         .filter {
           case RemovedInfo(_, _) => false
           case _ => true
         }
         .filter { case file => file.tokens.startsWith(tokens)}
-        .map { case file => file.tokens.drop(tokens.size) }
-        .flatMap {
-          case filename :: Nil => Some(filename)
-          case _ => None
-        }
+        .filter { case file => file.tokens.length == l }
         .toList
 
-      sender ! filenames
+      sender ! DirectoryResponse(files)
 
     case msg => log.info("Uncaught message: {}", msg)
   }
@@ -99,11 +91,12 @@ object NameNode {
 
   case class PutFile(path: String, fileInfo: FileInfo, contentInfo: FileContentInfo)
   case class PutDirectory(path: String, directoryInfo: DirectoryInfo)
-  case class DeleteFile(path: String)
-  case class DeleteDirectory(path: String)
+  case class Delete(path: String)
   case class GetPathInfo(path: String)
   case class GetFileContentInfo(path: String)
   case class GetDirectory(path: String)
+  case class DirectoryResponse(list: List[PathInfo])
+
 
   case class PutPaths(paths: List[PathInfo])
   case object Acknowledged

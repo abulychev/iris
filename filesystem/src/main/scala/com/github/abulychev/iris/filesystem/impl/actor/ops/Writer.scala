@@ -1,18 +1,18 @@
-package com.github.abulychev.iris.localfs.actor.file
+package com.github.abulychev.iris.filesystem.impl.actor.ops
 
-import java.nio.ByteBuffer
 import akka.actor.{ActorRef, Props, ActorLogging, Actor}
 import scala.util.{Failure, Success}
 import com.github.abulychev.iris.storage.local.chunk.actor.TemporalStorage
 import TemporalStorage.{WriteToChunk, CreateChunk}
 import com.github.abulychev.iris.model.{ChunkUtils, Chunk, FileContentInfo}
+import java.util
 
 /**
  * User: abulychev
  * Date: 3/21/14
  */
 class Writer(var info: FileContentInfo,
-             buffer: ByteBuffer,
+             bytes: Array[Byte],
              size: Long,
              offset: Long,
              storage: ActorRef,
@@ -88,8 +88,7 @@ class Writer(var info: FileContentInfo,
       chunks sortBy {_.offset} foreach {
         case chunk if ChunkUtils.overlap(chunk.range, range) =>
           val r = ChunkUtils.intersect(range, chunk.range)
-          val data = new Array[Byte](r.size)
-          buffer.get(data, 0, r.size)
+          val data = util.Arrays.copyOfRange(bytes, (r.start - offset).toInt, r.size)
 
           temporal ! WriteToChunk(chunk, data, r.start - chunk.offset)
           chunksAwait += 1

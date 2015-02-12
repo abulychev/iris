@@ -1,9 +1,9 @@
-package com.github.abulychev.iris.localfs.actor.file
+package com.github.abulychev.iris.filesystem.impl.actor.ops
 
 import akka.actor.{ActorRef, Props, Actor, ActorLogging}
-import java.nio.ByteBuffer
 import scala.util.{Failure, Success}
 import com.github.abulychev.iris.model.{ChunkUtils, Chunk, FileContentInfo}
+import com.github.abulychev.iris.filesystem.File
 
 /**
  * User: abulychev
@@ -11,7 +11,6 @@ import com.github.abulychev.iris.model.{ChunkUtils, Chunk, FileContentInfo}
  */
 class Reader(req: ActorRef,
              info: FileContentInfo,
-             buffer: ByteBuffer,
              size: Long,
              offset: Long,
              storage: ActorRef,
@@ -20,8 +19,9 @@ class Reader(req: ActorRef,
 
   log.debug("Received new reading job")
 
-  private val range = offset.toInt to (offset + size - 1).toInt
+  private val range = offset.toInt to Math.min((offset + size - 1).toInt, info.size - 1)
   private val chunksToRead = info.findChunks(range)
+  private val result = new Array[Byte](range.length)
 
   override def preStart() {
     chunksToRead foreach { case chunk =>
@@ -35,15 +35,13 @@ class Reader(req: ActorRef,
 
   def await(count: Int): Receive = {
     if (count == 0) {
-      var result = 0
       val sorted = list sortBy { case (chunk, _) => chunk.offset }
       sorted foreach { case (Chunk(_, offset, size), data) =>
         val r = ChunkUtils.intersect(range, offset to (offset + size - 1))
-        buffer.put(data, r.start - offset, r.size)
-        result += r.size
+        System.arraycopy(data, r.start - offset, result, (r.start - this.offset).toInt, r.size)
       }
 
-      req ! Success(result)
+      req ! File.DataRead(result)
       context.stop(self)
       PartialFunction[Any, Unit] { case _ => }
     } else PartialFunction[Any, Unit] {

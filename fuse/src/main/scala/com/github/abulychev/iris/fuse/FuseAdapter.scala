@@ -1,5 +1,6 @@
-package com.github.abulychev.iris.localfs
+package com.github.abulychev.iris.fuse
 
+import net.fusejna.types.TypeMode.NodeType
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicLong
 import net.fusejna.types.TypeMode
@@ -8,27 +9,23 @@ import net.fusejna.util.FuseFilesystemAdapterFull
 import scala.util.Try
 import scala.collection._
 import akka.actor.ActorRef
-import com.github.abulychev.iris.localfs.actor.FSActor._
 import akka.pattern.ask
 import scala.concurrent._
 import scala.concurrent.duration._
-import com.github.abulychev.iris.localfs.actor.FileHandlerActor.{Truncate, Write, Close, Read}
 import akka.util.Timeout
-import com.github.abulychev.iris.localfs.actor.FSActor.Open
-import com.github.abulychev.iris.localfs.actor.FSActor.GetAttributes
 import scala.util.Failure
-import com.github.abulychev.iris.localfs.actor.FSActor.Create
 import scala.util.Success
-import com.github.abulychev.iris.localfs.actor.FSActor.ReadDirectory
-import com.github.abulychev.iris.localfs.error._
-import com.github.abulychev.iris.storage.local.names.actor.NameNode.{DeleteDirectory, DeleteFile}
 import ExecutionContext.Implicits.global
+import com.github.abulychev.iris.filesystem.Filesystem._
+import com.github.abulychev.iris.filesystem.File._
+import com.github.abulychev.iris.filesystem.{File, Error}
+import com.github.abulychev.iris.storage.local.LocalStorage
 
 /**
  * User: abulychev
  * Date: 3/5/14
  */
-class LocalFS(fsActor: ActorRef, namenode: ActorRef) extends FuseFilesystemAdapterFull {
+class FuseAdapter(fsActor: ActorRef) extends FuseFilesystemAdapterFull {
   private implicit val timeout: Timeout = 1 day
 
   private val lastFileHandler = new AtomicLong(0)
@@ -39,17 +36,34 @@ class LocalFS(fsActor: ActorRef, namenode: ActorRef) extends FuseFilesystemAdapt
   override def getOptions: Array[String] = List("-oatomic_o_trunc", "-obig_writes").toArray
 
   override def getattr(path: String, stat: StructStat.StatWrapper): Int = {
-    val r = fsActor ? GetAttributes(path, stat)
-    getResult(wait[Try[Int]](r))
+    val r: Any = wait(fsActor ? GetAttributes(path))
+
+    r match {
+      case Attributes(List(FileEntity(_, size, ct))) =>
+        stat
+          .setMode(NodeType.FILE, true, true, false)
+          .size(size)
+          .blksize(LocalStorage.ChunkSize)    // TODO: Remove this
+          .setAllTimesMillis(ct)
+        0
+
+      case Attributes(List(DirectoryEntity(_, _))) =>
+        stat
+          .setMode(NodeType.DIRECTORY, true, true, false)
+        0
+
+      case _ =>  getResult(Failure(Error.NoSuchFileOrDirectory))
+    }
   }
 
   override def readdir(path: String, filler: DirectoryFiller): Int = {
-    val r = fsActor ? ReadDirectory(path, filler)
-    getResult(wait[Try[Int]](r))
+    val r = wait[Attributes](fsActor ? ReadDirectory(path))
+    r.entities foreach { entity => filler.add(entity.name)}
+    0
   }
 
   override def mkdir(path: String, mode: TypeMode.ModeWrapper): Int = {
-    val r = fsActor ? MakeDirectory(path, mode)
+    val r = fsActor ? MakeDirectory(path)
     getResult(wait[Try[Int]](r))
   }
 
@@ -57,54 +71,53 @@ class LocalFS(fsActor: ActorRef, namenode: ActorRef) extends FuseFilesystemAdapt
     val fh = lastFileHandler.incrementAndGet()
     info.fh(fh)
 
-    val result: Try[ActorRef] = wait {
+    val result: Any = wait {
       if (info.truncate) fsActor ? Create(path) else fsActor ? Open(path)
     }
 
     result match {
-      case Success(file) =>
+      case Opened(file) =>
         actorMap += fh -> file
         0
-      case Failure(e) =>
-        -ErrorCodes.EBADF
+
+      case Created(file) =>
+        actorMap += fh -> file
+        0
+
+      case _ => -ErrorCodes.EBADF
     }
   }
 
   override def read(path: String, buffer: ByteBuffer, size: Long, offset: Long, info: StructFuseFileInfo.FileInfoWrapper): Int = {
     val fh = info.fh
     val file = actorMap(fh)
-    getResult(wait(file ? Read(buffer, size, offset)))
-  }
+    val r: Any = wait(file ? File.Read(size, offset))
 
-  override def symlink(path: String, target: String): Int = {
-    /*
-    val file = new File(path)
+    r match {
+      case File.DataRead(bytes) =>
+        buffer.put(bytes)
+        bytes.length
 
-    if (!file.exists) return -ErrorCodes.ENOENT()
-
-    val length = file.length.toInt
-    val chunks = storage.addFile(file).get
-    val info = FileContentInfo(length, chunks)
-
-    val result = names.putFileContentInfo(target, info)
-
-    if (result.isSuccess) 0 else -ErrorCodes.EBADF
-    */
-    0
+      case Failure(e) =>
+        getResult(Failure(e))
+    }
   }
 
   override def create(path: String, mode: TypeMode.ModeWrapper, info: StructFuseFileInfo.FileInfoWrapper): Int = {
     val fh = lastFileHandler.incrementAndGet()
     info.fh(fh)
 
-    val file: Try[ActorRef] = wait(fsActor ? Create(path))
-    actorMap += fh -> file.get
+    val Created(file) = wait[Created](fsActor ? Create(path))
+    actorMap += fh -> file
     0
   }
 
   override def write(path: String, buffer: ByteBuffer, size: Long, offset: Long, info: StructFuseFileInfo.FileInfoWrapper): Int = {
     val file = actorMap(info.fh)
-    getResult(wait(file ? Write(buffer, size, offset)))
+    val bytes = new Array[Byte](size.toInt)
+    buffer.get(bytes, 0 , size.toInt)
+
+    getResult(wait(file ? File.Write(bytes, offset)))
   }
 
   override def truncate(path: String, offset: Long): Int = {
@@ -131,12 +144,12 @@ class LocalFS(fsActor: ActorRef, namenode: ActorRef) extends FuseFilesystemAdapt
   }
 
   override def unlink(path: String): Int = {
-    namenode ! DeleteFile(path)
+    fsActor ! Remove(path)
     0
   }
 
   override def rmdir(path: String): Int = {
-    namenode ! DeleteDirectory(path)
+    fsActor ! Remove(path)
     0
   }
 
@@ -148,7 +161,11 @@ class LocalFS(fsActor: ActorRef, namenode: ActorRef) extends FuseFilesystemAdapt
   private def getResult(value: Try[Int]): Int =
     value match {
       case Success(result) => result
-      case Failure(e: ErrorCode) => -e.code
+      case Failure(Error.NoSuchFileOrDirectory) => -ErrorCodes.ENOENT
+      case Failure(Error.ResourceTemporarilyUnavailable) => -ErrorCodes.EAGAIN
+      case Failure(Error.FileExists) => -ErrorCodes.EEXIST
+      case Failure(Error.NoDataAvailable) => -ErrorCodes.ENODATA
+      case Failure(_) => -1
     }
 }
 

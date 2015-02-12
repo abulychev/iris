@@ -1,10 +1,6 @@
-package com.github.abulychev.iris.localfs.actor
+package com.github.abulychev.iris.filesystem.impl.actor
 
 import akka.actor.{ActorLogging, Props, ActorRef, Actor}
-import net.fusejna.{DirectoryFiller, StructStat}
-import net.fusejna.types.TypeMode
-import net.fusejna.types.TypeMode.NodeType
-import com.github.abulychev.iris.localfs.error._
 import com.github.abulychev.iris.storage.local.names.actor.NameNode._
 import com.github.abulychev.iris.storage.local.names.actor.NameNode.GetFileContentInfo
 import scala.util.Success
@@ -13,19 +9,20 @@ import com.github.abulychev.iris.storage.local.names.actor.NameNode.GetDirectory
 import com.github.abulychev.iris.storage.local.names.actor.NameNode.PutFile
 import scala.util.Failure
 import scala.Some
-import com.github.abulychev.iris.localfs.LocalStorage
 import com.github.abulychev.iris.model.{DirectoryInfo, FileInfo, FileContentInfo}
+import com.github.abulychev.iris.filesystem.Filesystem._
+import com.github.abulychev.iris.filesystem.Error
 
 /**
  * User: abulychev
  * Date: 3/20/14
  */
 
-class FSActor(storage: ActorRef,
+class FilesystemHandlerActor(storage: ActorRef,
               temporal: ActorRef,
               namenode: ActorRef) extends Actor with ActorLogging {
 
-  import FSActor._
+  import FilesystemHandlerActor._
 
   private def fileProps(path: String, info: FileContentInfo) = Props(new FileHandlerActor(path, info, storage, temporal, namenode))
 
@@ -40,25 +37,25 @@ class FSActor(storage: ActorRef,
 
         def receive = {
           case opt: Option[FileContentInfo] =>
-            context.parent ! Opened(path, opt.getOrElse(FileContentInfo(0, Nil)), req)
+            context.parent.tell(OpenedEvent(path, opt.getOrElse(FileContentInfo(0, Nil))), req)
             context.stop(self)
         }
       }))
 
-
-    case Opened(path, info, req) =>
+    case OpenedEvent(path, info) =>
       val file = context.actorOf(fileProps(path, info))
-      req ! Success(file)
+      sender ! Opened(file)
 
     case Create(path: String) =>
       val info = FileContentInfo(0, Nil)
       namenode ! PutFile(path, FileInfo(path, "0", 0, System.currentTimeMillis), info)
 
       val file = context.actorOf(fileProps(path, info))
-      sender ! Success(file)
+      sender ! Created(file)
 
-    case GetAttributes(path, stat) =>
-      val req = sender
+    case GetAttributes(path) =>
+      val req = sender()
+      val name = path.drop(path.lastIndexOf('/') + 1)
 
       context.actorOf(Props(new Actor {
         override def preStart() {
@@ -67,28 +64,19 @@ class FSActor(storage: ActorRef,
 
         def receive = PartialFunction[Any, Unit] {
           case Some(FileInfo(_, _, size, ts)) =>
-            stat
-              .setMode(NodeType.FILE, true, true, false)
-              .size(size)
-              .blksize(LocalStorage.ChunkSize)
-              .setAllTimesMillis(ts)
+            req ! Attributes(List(FileEntity(name, size, ts)))
 
-            req ! Success(0)
-
-          case Some(DirectoryInfo(_, _)) =>
-            stat
-              .setMode(NodeType.DIRECTORY, true, true, false)
-
-            req ! Success(0)
+          case Some(DirectoryInfo(_, ts)) =>
+            req ! Attributes(List(DirectoryEntity(name, ts)))
 
           case _ =>
-            req ! Failure(NoSuchFileOrDirectory)
+            req ! Failure(Error.NoSuchFileOrDirectory)
 
         } andThen { _ => context.stop(self) }
       }))
 
-    case ReadDirectory(path, filler) =>
-      val req = sender
+    case ReadDirectory(path) =>
+      val req = sender()
 
       context.actorOf(Props(new Actor {
         override def preStart() {
@@ -96,27 +84,27 @@ class FSActor(storage: ActorRef,
         }
 
         def receive = {
-          case list: List[String] =>
-            list.foreach(filler.add(_))
-            req ! Success(0)
+          case DirectoryResponse(files) =>
+            req ! Attributes(files map {
+              case file: FileInfo => FileEntity(file.name, file.size, file.timestamp)
+              case dir: DirectoryInfo => DirectoryEntity(dir.name, dir.timestamp)
+            })
             context.stop(self)
         }
       }))
 
-    case MakeDirectory(path, mode) =>
+    case MakeDirectory(path) =>
       namenode ! PutDirectory(path, DirectoryInfo(path, System.currentTimeMillis))
       sender ! Success(0)
+
+
+    case Remove(path) =>
+      namenode ! Delete(path)
 
     case _ =>
   }
 }
 
-object FSActor {
-  case class Open(path: String)
-  case class Create(path: String)
-  case class GetAttributes(path: String, stat: StructStat.StatWrapper)
-  case class ReadDirectory(path: String, filler: DirectoryFiller)
-  case class MakeDirectory(path: String, mode: TypeMode.ModeWrapper)
-
-  case class Opened(path: String, info: FileContentInfo, req: ActorRef)
+object FilesystemHandlerActor {
+  case class OpenedEvent(path: String, info: FileContentInfo)
 }

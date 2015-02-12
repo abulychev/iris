@@ -33,10 +33,7 @@ class DistributedNamesStorage(home: File,
     case put @ NameNode.PutDirectory(_, _) =>
       forward(put)
 
-    case delete @ NameNode.DeleteFile(_) =>
-      forward(delete)
-
-    case delete @ NameNode.DeleteDirectory(_) =>
+    case delete @ NameNode.Delete(_) =>
       forward(delete)
 
     case discovered @ VersionDiscovered(_, _) =>

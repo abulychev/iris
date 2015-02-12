@@ -1,10 +1,10 @@
-package com.github.abulychev.iris.localfs.actor
+package com.github.abulychev.iris.filesystem.impl.actor
 
 import akka.actor.{ActorLogging, Props, ActorRef, Actor}
 import scala.util.{Try, Success, Failure}
-import java.nio.ByteBuffer
-import com.github.abulychev.iris.localfs.actor.file.{Persister, Writer, Truncater, Reader}
 import com.github.abulychev.iris.model.FileContentInfo
+import com.github.abulychev.iris.filesystem.File
+import com.github.abulychev.iris.filesystem.impl.actor.ops.{Writer, Reader, Truncater, Persister}
 
 /**
  * User: abulychev
@@ -15,8 +15,6 @@ class FileHandlerActor(path: String,
                        storage: ActorRef,
                        temporal: ActorRef,
                        namenode: ActorRef) extends Actor with ActorLogging {
-
-  import FileHandlerActor._
 
   private var modified = false
   private var queue = List[(ActorRef, Any)]()
@@ -34,6 +32,7 @@ class FileHandlerActor(path: String,
 
   private def reading(req: ActorRef): Receive = {
     val pf: PartialFunction[Any, Any] = {
+      case dr: File.DataRead => dr
       case result: Try[_] => result
     }
     pf andThen sendResponse(req) orElse PutInQueue
@@ -75,26 +74,26 @@ class FileHandlerActor(path: String,
   }
 
   def receive: Receive = {
-    case Read(buffer, size, offset) =>
+    case File.Read(size, offset) =>
       if (modified) {
-        context.actorOf(Props(new Reader(self, info, buffer, size, offset, storage, temporal, namenode)))
+        context.actorOf(Props(new Reader(self, info, size, offset, storage, temporal, namenode)))
         context.become(reading(sender()))
       } else {
         val req = sender()
-        context.actorOf(Props(new Reader(req, info, buffer, size, offset, storage, temporal, namenode)))
+        context.actorOf(Props(new Reader(req, info, size, offset, storage, temporal, namenode)))
       }
 
-    case Truncate(offset) =>
+    case File.Truncate(offset) =>
       context.actorOf(Props(new Truncater(info, offset, storage, temporal, namenode)))
       context.become(truncating(sender()))
       modified = true
 
-    case Write(buffer, size, offset) =>
-      context.actorOf(Props(new Writer(info, buffer, size, offset, storage, temporal, namenode)))
+    case File.Write(bytes, offset) =>
+      context.actorOf(Props(new Writer(info, bytes, bytes.length, offset, storage, temporal, namenode)))
       context.become(writing(sender()))
       modified = true
 
-    case Close =>
+    case File.Close =>
       if (modified) {
         context.actorOf(Props(new Persister(path, info, storage, temporal, namenode)))
         context.become(closing(sender()))
@@ -103,11 +102,4 @@ class FileHandlerActor(path: String,
         context.stop(self)
       }
   }
-}
-
-object FileHandlerActor {
-  case class Read(buffer: ByteBuffer, size: Long, offset: Long)
-  case class Write(buffer: ByteBuffer, size: Long, offset: Long)
-  case class Truncate(offset: Long)
-  object Close
 }

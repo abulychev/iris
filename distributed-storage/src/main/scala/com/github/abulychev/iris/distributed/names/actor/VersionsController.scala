@@ -3,7 +3,7 @@ package com.github.abulychev.iris.distributed.names.actor
 import akka.actor.{ActorRef, Props, Actor, ActorLogging}
 import com.github.abulychev.iris.storage.local.names.actor.NameNode
 import com.github.abulychev.iris.storage.local.names.NamesBlock
-import com.github.abulychev.iris.storage.local.names.actor.NameNode.{DeleteDirectory, DeleteFile, PutDirectory, PutFile}
+import com.github.abulychev.iris.storage.local.names.actor.NameNode.{Delete, PutDirectory, PutFile}
 import scala.collection.mutable
 import java.net.InetSocketAddress
 import scala.concurrent.duration._
@@ -51,11 +51,7 @@ class VersionsController(home: File,
 
       incrementVersion(directoryInfo)
 
-    case DeleteFile(path) =>
-      val removedInfo = RemovedInfo(path, System.currentTimeMillis)
-      incrementVersion(removedInfo)
-
-    case DeleteDirectory(path) =>
+    case Delete(path) =>
       val removedInfo = RemovedInfo(path, System.currentTimeMillis)
       incrementVersion(removedInfo)
 

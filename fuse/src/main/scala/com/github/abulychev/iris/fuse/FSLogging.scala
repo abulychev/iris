@@ -1,4 +1,4 @@
-package com.github.abulychev.iris.localfs
+package com.github.abulychev.iris.fuse
 
 import net.fusejna._
 import org.slf4j.LoggerFactory

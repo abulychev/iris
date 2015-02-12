@@ -1,4 +1,4 @@
-package com.github.abulychev.iris.localfs
+package com.github.abulychev.iris.storage.local
 
 /**
   * User: abulychev

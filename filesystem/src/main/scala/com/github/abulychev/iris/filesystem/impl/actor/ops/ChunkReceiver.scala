@@ -1,10 +1,10 @@
-package com.github.abulychev.iris.localfs.actor.file
+package com.github.abulychev.iris.filesystem.impl.actor.ops
 
 import akka.actor.{Actor, ActorRef}
 import scala.util.{Failure, Success}
-import com.github.abulychev.iris.localfs.error.NoDataAvailable
 import com.github.abulychev.iris.storage.local.chunk.actor.{TemporalStorage, ChunkStorage}
 import com.github.abulychev.iris.model.Chunk
+import com.github.abulychev.iris.filesystem.Error
 
 /**
  * User: abulychev
@@ -30,7 +30,7 @@ class ChunkReceiver(chunk: Chunk,
       context.stop(self)
 
     case _ =>
-      context.parent ! Failure(NoDataAvailable)
+      context.parent ! Failure(Error.NoDataAvailable)
       context.stop(self)
   }
 }
